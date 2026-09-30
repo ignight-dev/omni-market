@@ -117,8 +117,9 @@ public class TradingPostMerchantEntity extends WanderingTrader {
             DatabaseManager db = DatabaseManager.getInstance();
             AccountSummary acc = db.getOrCreateAccount(serverPlayer.getUUID(), serverPlayer.getScoreboardName());
 
-            // Open the Trading Post Screen
+            // Open the Trading Post Screen and sync favorites
             PacketDistributor.sendToPlayer(serverPlayer, new OpenMarketplaceS2C(acc.copperBalance(), acc.vaultItemCount(), acc.vaultCopperAmount()));
+            PacketDistributor.sendToPlayer(serverPlayer, new com.omni.marketplace.network.MarketPackets.SyncFavoritesS2C(new java.util.ArrayList<>(db.getPlayerFavorites(serverPlayer.getUUID()))));
             this.playSound(SoundEvents.VILLAGER_YES, 1.0F, 1.0F);
         }
         return InteractionResult.sidedSuccess(this.level().isClientSide);

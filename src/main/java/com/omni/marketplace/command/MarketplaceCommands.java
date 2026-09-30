@@ -139,6 +139,7 @@ public class MarketplaceCommands {
             DatabaseManager db = DatabaseManager.getInstance();
             AccountSummary acc = db.getOrCreateAccount(player.getUUID(), player.getScoreboardName());
             PacketDistributor.sendToPlayer(player, new OpenMarketplaceS2C(acc.copperBalance(), acc.vaultItemCount(), acc.vaultCopperAmount()));
+            PacketDistributor.sendToPlayer(player, new com.omni.marketplace.network.MarketPackets.SyncFavoritesS2C(new java.util.ArrayList<>(db.getPlayerFavorites(player.getUUID()))));
             player.sendSystemMessage(Component.literal("§d[Admin] Opened Trading Post GUI."));
             return 1;
         }

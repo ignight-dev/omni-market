@@ -64,7 +64,17 @@ public class ClientPayloadHandler {
         context.enqueueWork(() -> {
             Minecraft mc = Minecraft.getInstance();
             if (mc.screen instanceof MarketplaceScreen screen) {
-                screen.updateOrderBook(payload.itemId(), payload.asks(), payload.bids());
+                screen.updateOrderBook(payload.itemId(), payload.asks(), payload.bids(), payload.analytics());
+            }
+        });
+    }
+
+    public static void handleSyncFavorites(SyncFavoritesS2C payload, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            com.omni.marketplace.client.FavoritesClientState.setFavorites(payload.favoriteItemIds());
+            Minecraft mc = Minecraft.getInstance();
+            if (mc.screen instanceof MarketplaceScreen screen) {
+                screen.updateFavorites(payload.favoriteItemIds());
             }
         });
     }

@@ -266,8 +266,16 @@ public class OmniMarketplace {
         }
     }
 
+    private static net.minecraft.server.MinecraftServer currentServer = null;
+
+    public static net.minecraft.server.MinecraftServer getServer() {
+        return currentServer;
+    }
+
     @SubscribeEvent
     public void onServerStarting(ServerStartingEvent event) {
+        currentServer = event.getServer();
+        com.omni.marketplace.config.MarketConfig.get().initialize(event.getServer().getServerDirectory());
         Path worldDir = event.getServer().getWorldPath(LevelResource.ROOT);
         LOGGER.info("Starting Omni Marketplace SQLite Database at world directory: {}", worldDir);
         DatabaseManager.getInstance().initialize(worldDir);
@@ -277,6 +285,7 @@ public class OmniMarketplace {
     public void onServerStopping(ServerStoppingEvent event) {
         LOGGER.info("Shutting down Omni Marketplace SQLite Database...");
         DatabaseManager.getInstance().close();
+        currentServer = null;
     }
 
     @SubscribeEvent

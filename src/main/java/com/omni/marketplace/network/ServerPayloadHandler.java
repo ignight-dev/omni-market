@@ -33,6 +33,7 @@ public class ServerPayloadHandler {
             if (!(context.player() instanceof ServerPlayer player)) return;
             int limit = 50;
             List<CatalogEntry> entries = ItemCatalog.searchItems(
+                    player.getUUID(),
                     payload.query(),
                     payload.category(),
                     payload.subCategory(),
@@ -399,7 +400,18 @@ public class ServerPayloadHandler {
                 bids.add(new OrderEntry(b.id(), b.buyerName(), b.itemId(), b.itemNbt() != null ? b.itemNbt() : "", b.priceCopper(), b.quantity(), b.createdAt()));
             }
 
-            PacketDistributor.sendToPlayer(player, new SyncOrderBookS2C(payload.itemId(), asks, bids));
+            PacketDistributor.sendToPlayer(player, new SyncOrderBookS2C(payload.itemId(), asks, bids, db.getItemAnalytics(payload.itemId())));
+        });
+    }
+
+    public static void handleToggleFavorite(ToggleFavoriteC2S payload, IPayloadContext context) {
+        context.enqueueWork(() -> {
+            if (!(context.player() instanceof ServerPlayer player)) return;
+            DatabaseManager db = DatabaseManager.getInstance();
+            boolean added = db.togglePlayerFavorite(player.getUUID(), payload.itemId());
+            List<String> favs = new ArrayList<>(db.getPlayerFavorites(player.getUUID()));
+            PacketDistributor.sendToPlayer(player, new SyncFavoritesS2C(favs));
+            player.displayClientMessage(Component.literal(added ? "§6★ Added to Watchlist" : "§7☆ Removed from Watchlist"), true);
         });
     }
 
@@ -432,6 +444,7 @@ public class ServerPayloadHandler {
         DatabaseManager db = DatabaseManager.getInstance();
         AccountSummary acc = db.getOrCreateAccount(player.getUUID(), player.getScoreboardName());
         PacketDistributor.sendToPlayer(player, new SyncAccountS2C(acc.copperBalance(), acc.vaultItemCount(), acc.vaultCopperAmount()));
+        PacketDistributor.sendToPlayer(player, new SyncFavoritesS2C(new ArrayList<>(db.getPlayerFavorites(player.getUUID()))));
     }
 
     private static boolean removeOneItem(ServerPlayer player, Item item) {

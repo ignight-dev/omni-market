@@ -82,6 +82,11 @@ public class NetworkHandler {
                 DropPocketEmeraldC2S.STREAM_CODEC,
                 ServerPayloadHandler::handleDropPocketEmerald
         );
+        registrar.playToServer(
+                ToggleFavoriteC2S.TYPE,
+                ToggleFavoriteC2S.STREAM_CODEC,
+                ServerPayloadHandler::handleToggleFavorite
+        );
 
         // S2C Packets
         registrar.playToClient(
@@ -113,6 +118,11 @@ public class NetworkHandler {
                 SyncOrderBookS2C.TYPE,
                 SyncOrderBookS2C.STREAM_CODEC,
                 ClientPayloadHandler::handleSyncOrderBook
+        );
+        registrar.playToClient(
+                SyncFavoritesS2C.TYPE,
+                SyncFavoritesS2C.STREAM_CODEC,
+                ClientPayloadHandler::handleSyncFavorites
         );
         registrar.playToClient(
                 SyncTransactionsS2C.TYPE,

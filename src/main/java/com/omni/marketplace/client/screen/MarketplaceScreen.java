@@ -308,11 +308,25 @@ public class MarketplaceScreen extends Screen {
         this.vaultCoins = vaultCoins;
     }
 
-    public void updateOrderBook(String itemId, List<OrderEntry> asks, List<OrderEntry> bids) {
+    private ItemAnalytics currentAnalytics = null;
+
+    public void updateOrderBook(String itemId, List<OrderEntry> asks, List<OrderEntry> bids, ItemAnalytics analytics) {
         this.currentAsks.clear();
         this.currentAsks.addAll(asks);
         this.currentBids.clear();
         this.currentBids.addAll(bids);
+        this.currentAnalytics = analytics;
+    }
+
+    public void updateOrderBook(String itemId, List<OrderEntry> asks, List<OrderEntry> bids) {
+        updateOrderBook(itemId, asks, bids, ItemAnalytics.EMPTY);
+    }
+
+    public void updateFavorites(List<String> favs) {
+        com.omni.marketplace.client.FavoritesClientState.setFavorites(favs);
+        if (this.currentMainCategory == MainCategory.FAVORITES) {
+            refreshCatalog();
+        }
     }
 
     public void updateCatalog(List<CatalogEntry> entries) {
@@ -605,7 +619,8 @@ public class MarketplaceScreen extends Screen {
         // Table Header
         graphics.fill(tableX + 1, tableY + 1, tableX + tableW - 1, tableY + 16, MarketTheme.PANEL_HEADER_BG);
         graphics.fill(tableX + 1, tableY + 16, tableX + tableW - 1, tableY + 17, MarketTheme.PANEL_BORDER_GOLD);
-        graphics.drawString(this.font, Component.literal("Good / Item"), tableX + 26, tableY + 4, MarketTheme.TEXT_GOLD, false);
+        graphics.drawString(this.font, Component.literal("★"), tableX + 24, tableY + 4, MarketTheme.TEXT_GOLD, false);
+        graphics.drawString(this.font, Component.literal("Good / Item"), tableX + 38, tableY + 4, MarketTheme.TEXT_GOLD, false);
 
         int tradeBtnW = 48;
         int tradeBtnX = tableX + tableW - 54;
@@ -653,9 +668,24 @@ public class MarketplaceScreen extends Screen {
                 this.hoveredTooltipStack = stack;
             }
 
+            // Watchlist Star (Clickable)
+            int starX = tableX + 23;
+            int starY = currentY + 3;
+            int starW = 12;
+            int starH = 16;
+            boolean isFav = com.omni.marketplace.client.FavoritesClientState.isFavorite(entry.itemId());
+            boolean isStarHovered = mouseX >= starX && mouseX <= starX + starW && mouseY >= starY && mouseY <= starY + starH;
+
+            String starIcon = isFav ? "§6★" : (isStarHovered ? "§e☆" : "§8☆");
+            graphics.drawString(this.font, Component.literal(starIcon), starX + 1, currentY + 7, isFav ? MarketTheme.TEXT_GOLD : MarketTheme.TEXT_MUTED, false);
+
+            if (isStarHovered) {
+                this.hoveredTooltipText = Component.literal(isFav ? "§cRemove from Watchlist (★)" : "§6★ Add to Watchlist");
+            }
+
             String displayName = stack.isEmpty() ? entry.itemId() : stack.getHoverName().getString();
-            int maxNameW = Math.max(20, askX - (tableX + 26) - 8);
-            graphics.drawString(this.font, Component.literal(trimText(displayName, maxNameW)), tableX + 26, currentY + 7, isSelected ? MarketTheme.TEXT_GOLD : MarketTheme.TEXT_PRIMARY, false);
+            int maxNameW = Math.max(20, askX - (tableX + 38) - 8);
+            graphics.drawString(this.font, Component.literal(trimText(displayName, maxNameW)), tableX + 38, currentY + 7, isSelected ? MarketTheme.TEXT_GOLD : MarketTheme.TEXT_PRIMARY, false);
 
             String sellText = entry.lowestSell() > 0 ? CurrencyUtils.format(entry.lowestSell()) : "§8--";
             String buyText = entry.highestBuy() > 0 ? CurrencyUtils.format(entry.highestBuy()) : "§8--";
@@ -685,7 +715,17 @@ public class MarketplaceScreen extends Screen {
         }
 
         if (this.catalogEntries.isEmpty()) {
-            graphics.drawCenteredString(this.font, Component.literal("§7No goods found in records."), tableX + (tableW / 2), tableY + 60, MarketTheme.TEXT_MUTED);
+            if (this.currentMainCategory == MainCategory.FAVORITES) {
+                int cardH = 50;
+                int cardW = Math.min(300, tableW - 40);
+                int cardX = tableX + (tableW - cardW) / 2;
+                int cardY = tableY + (tableH - cardH) / 2;
+                MarketTheme.drawMedievalCard(graphics, cardX, cardY, cardW, cardH, 0xD017151B);
+                graphics.drawCenteredString(this.font, Component.literal("§6★ WATCHLIST IS EMPTY ★"), cardX + (cardW / 2), cardY + 12, MarketTheme.TEXT_GOLD);
+                graphics.drawCenteredString(this.font, Component.literal("§7Click §6☆§7 next to any item to track it here!"), cardX + (cardW / 2), cardY + 28, MarketTheme.TEXT_MUTED);
+            } else {
+                graphics.drawCenteredString(this.font, Component.literal("§7No goods found in records."), tableX + (tableW / 2), tableY + 60, MarketTheme.TEXT_MUTED);
+            }
         }
 
         // Pagination Bar below table
@@ -801,8 +841,8 @@ public class MarketplaceScreen extends Screen {
     /* ========================================================================= */
 
     private void renderTradeDialog(GuiGraphics graphics, int mouseX, int mouseY, float partialTicks) {
-        int dialogW = Math.min(320, this.width - 24);
-        int dialogH = Math.min(218, this.height - 16);
+        int dialogW = Math.min(340, this.width - 16);
+        int dialogH = Math.min(242, this.height - 16);
         int dialogX = (this.width - dialogW) / 2;
         int dialogY = (this.height - dialogH) / 2;
 
@@ -851,11 +891,35 @@ public class MarketplaceScreen extends Screen {
         String statusStr = "§7Ask: " + askStr + " §7| Bid: " + bidStr + " §7| Sugg: §6" + sugStr;
         graphics.drawString(this.font, Component.literal(trimText(statusStr, dialogW - 46)), dialogX + 34, dialogY + 31, MarketTheme.TEXT_PRIMARY, false);
 
+        // 3b. Market Intelligence / 24h Trends Ribbon
+        int statsY = dialogY + 43;
+        int statsW = dialogW - 16;
+        graphics.fill(dialogX + 8, statsY, dialogX + 8 + statsW, statsY + 14, 0xD017151B);
+        graphics.fill(dialogX + 8, statsY, dialogX + 8 + statsW, statsY + 1, 0x40D4AF37);
+        graphics.fill(dialogX + 8, statsY + 13, dialogX + 8 + statsW, statsY + 14, 0x40D4AF37);
+
+        String selItemId = this.selectedCatalogEntry != null ? this.selectedCatalogEntry.itemId() : (!this.selectedStack.isEmpty() ? BuiltInRegistries.ITEM.getKey(this.selectedStack.getItem()).toString() : "");
+        String volStr = "0 units";
+        String rangeStr = "§8--";
+        String lastStr = "§8--";
+
+        if (this.currentAnalytics != null && this.currentAnalytics.itemId().equals(selItemId)) {
+            if (this.currentAnalytics.volume24h() > 0) {
+                volStr = String.format("%,d units", this.currentAnalytics.volume24h());
+                rangeStr = CurrencyUtils.format(this.currentAnalytics.minPrice24h()) + "§7-§f" + CurrencyUtils.format(this.currentAnalytics.maxPrice24h());
+            }
+            if (this.currentAnalytics.lastTradedPrice() > 0) {
+                lastStr = CurrencyUtils.format(this.currentAnalytics.lastTradedPrice());
+            }
+        }
+        String analyticsLine = String.format("§724h Vol: §e%s §7| Range: %s §7| Last Sale: %s", volStr, rangeStr, lastStr);
+        graphics.drawCenteredString(this.font, Component.literal(trimText(analyticsLine, statsW - 6)), dialogX + (dialogW / 2), statsY + 3, MarketTheme.TEXT_PRIMARY);
+
         // Divider
-        MarketTheme.drawMedievalDivider(graphics, dialogX + 8, dialogY + 42, dialogW - 16);
+        MarketTheme.drawMedievalDivider(graphics, dialogX + 8, dialogY + 59, dialogW - 16);
 
         // 4. Buy vs Sell Mode Tabs
-        int modeY = dialogY + 45;
+        int modeY = dialogY + 63;
         int modeBtnW = (dialogW - 24) / 2;
         int buyBg = this.tradeIsBuy ? MarketTheme.BTN_PRIMARY : MarketTheme.BTN_DEFAULT;
         int buyBorder = this.tradeIsBuy ? MarketTheme.PANEL_BORDER_GOLD : MarketTheme.BTN_DEFAULT_BORDER;
@@ -873,7 +937,7 @@ public class MarketplaceScreen extends Screen {
         graphics.drawCenteredString(this.font, Component.literal("💰 Sell (Ask)"), dialogX + 16 + modeBtnW + (modeBtnW / 2), modeY + 4, !this.tradeIsBuy ? MarketTheme.TEXT_GOLD : MarketTheme.TEXT_SECONDARY);
 
         // 5. Instant Action Bar
-        int instantY = dialogY + 64;
+        int instantY = dialogY + 82;
         int instantH = 16;
         int instantBtnW = dialogW - 16;
         if (this.tradeIsBuy) {
@@ -901,7 +965,7 @@ public class MarketplaceScreen extends Screen {
         }
 
         // 6. Custom Order Config: Quantity Row
-        int qY = dialogY + 83;
+        int qY = dialogY + 101;
         graphics.drawString(this.font, Component.literal("Qty:"), dialogX + 10, qY + 3, MarketTheme.TEXT_SECONDARY, false);
 
         boolean minusHov = mouseX >= dialogX + 38 && mouseX <= dialogX + 51 && mouseY >= qY + 1 && mouseY <= qY + 15;
@@ -941,7 +1005,7 @@ public class MarketplaceScreen extends Screen {
         graphics.drawCenteredString(this.font, Component.literal("Max"), bMax + 13, qY + 3, 0xFFFFFF);
 
         // 7. Price Presets Row: [Suggested] [Match Bid/Ask] [+/-1c]
-        int quickY = dialogY + 100;
+        int quickY = dialogY + 119;
         graphics.drawString(this.font, Component.literal("Presets:"), dialogX + 10, quickY + 2, MarketTheme.TEXT_MUTED, false);
 
         boolean hovSug = mouseX >= dialogX + 54 && mouseX <= dialogX + 110 && mouseY >= quickY && mouseY <= quickY + 13;
@@ -957,7 +1021,7 @@ public class MarketplaceScreen extends Screen {
         graphics.drawCenteredString(this.font, Component.literal(this.tradeIsBuy ? "+1c Over" : "-1c Under"), dialogX + 202, quickY + 3, hovOffset ? 0xFFFFFF : 0x55FF55);
 
         // 8. Unit Price Row: Gold, Silver, Copper boxes + Adjust Buttons [-5c] [+5c]
-        int pY = dialogY + 116;
+        int pY = dialogY + 135;
         graphics.drawString(this.font, Component.literal("Price:"), dialogX + 10, pY + 3, MarketTheme.TEXT_SECONDARY, false);
 
         this.goldBox.setX(dialogX + 44);
@@ -1032,7 +1096,7 @@ public class MarketplaceScreen extends Screen {
         }
 
         // 9. Financial / Fee Breakdown Card
-        int feeY = dialogY + 133;
+        int feeY = dialogY + 152;
         int feeCardW = dialogW - 16;
         if (!this.tradeIsBuy) {
             long gross = this.tradeUnitPrice * (long) this.tradeQuantity;
@@ -1343,15 +1407,30 @@ public class MarketplaceScreen extends Screen {
                 return true;
             }
 
-            // Catalog Row clicks (Open dedicated Trade Dialog)
+            // Catalog Row clicks (Open dedicated Trade Dialog or toggle Favorite)
             int rowY = tableY + 18;
             int visibleRows = Math.max(1, (tableH - 20) / 22);
             for (int i = 0; i < visibleRows; i++) {
                 int index = this.catalogScrollOffset + i;
                 if (index >= this.catalogEntries.size()) break;
+                CatalogEntry entry = this.catalogEntries.get(index);
                 int currentY = rowY + (i * 22);
+
+                // Check Watchlist star click
+                int starX = tableX + 23;
+                int starY = currentY + 3;
+                if (mouseX >= starX && mouseX <= starX + 13 && mouseY >= starY && mouseY <= starY + 16) {
+                    PacketDistributor.sendToServer(new ToggleFavoriteC2S(entry.itemId()));
+                    com.omni.marketplace.client.FavoritesClientState.toggleFavorite(entry.itemId());
+                    Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(SoundEvents.UI_BUTTON_CLICK, 1.2F));
+                    if (this.currentMainCategory == MainCategory.FAVORITES) {
+                        refreshCatalog();
+                    }
+                    return true;
+                }
+
                 if (mouseX >= tableX && mouseX <= tableX + tableW - 6 && mouseY >= currentY && mouseY < currentY + 21) {
-                    openTradeDialogForCatalog(this.catalogEntries.get(index));
+                    openTradeDialogForCatalog(entry);
                     return true;
                 }
             }
@@ -1494,8 +1573,8 @@ public class MarketplaceScreen extends Screen {
     }
 
     private boolean handleTradeDialogClick(double mouseX, double mouseY, int button) {
-        int dialogW = Math.min(320, this.width - 24);
-        int dialogH = Math.min(218, this.height - 16);
+        int dialogW = Math.min(340, this.width - 16);
+        int dialogH = Math.min(242, this.height - 16);
         int dialogX = (this.width - dialogW) / 2;
         int dialogY = (this.height - dialogH) / 2;
 
@@ -1518,7 +1597,7 @@ public class MarketplaceScreen extends Screen {
         }
 
         // Buy / Sell Mode Tabs
-        int modeY = dialogY + 45;
+        int modeY = dialogY + 63;
         int modeBtnW = (dialogW - 24) / 2;
         if (mouseX >= dialogX + 8 && mouseX <= dialogX + 8 + modeBtnW && mouseY >= modeY && mouseY <= modeY + 16) {
             this.tradeIsBuy = true;
@@ -1530,7 +1609,7 @@ public class MarketplaceScreen extends Screen {
         }
 
         // Instant Action Button
-        int instantY = dialogY + 64;
+        int instantY = dialogY + 82;
         int instantH = 16;
         int instantBtnW = dialogW - 16;
         if (mouseX >= dialogX + 8 && mouseX <= dialogX + 8 + instantBtnW && mouseY >= instantY && mouseY <= instantY + instantH) {
@@ -1560,7 +1639,7 @@ public class MarketplaceScreen extends Screen {
         }
 
         // Quantity - / +
-        int qY = dialogY + 83;
+        int qY = dialogY + 101;
         if (mouseX >= dialogX + 38 && mouseX <= dialogX + 51 && mouseY >= qY + 1 && mouseY <= qY + 15) {
             this.tradeQuantity = Math.max(1, this.tradeQuantity - 1);
             this.qtyBox.setValue(String.valueOf(this.tradeQuantity));
@@ -1608,7 +1687,7 @@ public class MarketplaceScreen extends Screen {
         }
 
         // Price presets: [Suggested] [Match] [+/-1c]
-        int quickY = dialogY + 100;
+        int quickY = dialogY + 119;
         long lowestAsk = this.selectedCatalogEntry != null ? this.selectedCatalogEntry.lowestSell() : 0L;
         long highestBid = this.selectedCatalogEntry != null ? this.selectedCatalogEntry.highestBuy() : 0L;
         long suggested = this.selectedCatalogEntry != null ? this.selectedCatalogEntry.suggestedPrice() : 0L;
@@ -1641,7 +1720,7 @@ public class MarketplaceScreen extends Screen {
         }
 
         // Price -5c / +5c Buttons
-        int pY = dialogY + 116;
+        int pY = dialogY + 135;
         int btnMinusX = dialogX + 190;
         int btnMinusW = 32;
         int btnMinusY = pY + 1;

@@ -9,6 +9,7 @@ public class CategoryDef {
 
     public enum MainCategory {
         ALL("All Items"),
+        FAVORITES("★ Watchlist"),
         WEAPONS_ARMOR("Weapons & Armor"),
         TOOLS("Tools"),
         MATERIALS("Crafting Materials"),
@@ -227,6 +228,7 @@ public class CategoryDef {
     public static List<SubCategory> getSubCategories(MainCategory mainCategory) {
         return switch (mainCategory) {
             case ALL -> List.of(SubCategory.ALL);
+            case FAVORITES -> List.of(SubCategory.ALL);
             case WEAPONS_ARMOR -> List.of(SubCategory.ALL, SubCategory.SWORDS_AXES, SubCategory.BOWS, SubCategory.HELMETS, SubCategory.CHESTPLATES, SubCategory.LEGGINGS, SubCategory.BOOTS, SubCategory.SHIELDS);
             case TOOLS -> List.of(SubCategory.ALL, SubCategory.PICKAXES, SubCategory.SHOVELS, SubCategory.HOES, SubCategory.FISHING_SHEARS, SubCategory.UTILITY);
             case MATERIALS -> List.of(SubCategory.ALL, SubCategory.ORES_INGOTS, SubCategory.WOOD_LOGS, SubCategory.STONE_MINERALS, SubCategory.MOB_DROPS, SubCategory.FARMING);

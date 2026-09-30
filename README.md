@@ -144,11 +144,34 @@ All admin commands are accessible via `/market admin`, `/marketplace admin`, `/t
 - [x] Consumable Imperial Merchant License with drop loss fix.
 - [x] Comprehensive administrator license reset & revocation suite.
 
-### Phase 3: Market Intelligence & Analytics 🔄 (In Progress)
-- [ ] Historical price charts & 24h volume graphs in GUI.
-- [ ] Discord Webhook integration for high-value sales and market alerts.
+### Phase 3: Market Intelligence & Analytics ✅
+- [x] Historical price analytics (24h volume, trading range, last traded price) displayed in Trade Dialog.
+- [x] Discord Webhook integration for high-value sales with rich embeds and server-wide announcements.
+- [x] Watchlist / Favorites system (`★` quick filter, persistent per-player in SQLite, clickable star in catalog rows).
+- [x] Pixel-perfect visual GUI aesthetic audit (symmetrical frames, exact column padding, zero text clipping or box overlap).
 - [ ] Category-based tax configuration per world or dimension.
-- [ ] Search filter presets (Favorites, Watchlist, Guild-only).
+
+---
+
+## ❖ Configuration (`config/omni_marketplace.json`)
+
+On server launch, Omni Marketplace creates a configuration file at `config/omni_marketplace.json`:
+
+```json
+{
+  "webhookUrl": "",
+  "enableDiscordWebhook": false,
+  "enableInGameBroadcasts": true,
+  "minBroadcastValueCopper": 100000
+}
+```
+
+- **`webhookUrl`**: The Discord Webhook URL for transaction notifications.
+- **`enableDiscordWebhook`**: Enables or disables asynchronous Discord webhook dispatch.
+- **`enableInGameBroadcasts`**: Broadcasts royal announcements across the server for legendary trades.
+- **`minBroadcastValueCopper`**: Minimum trade value required to trigger alerts (e.g. `100000` = 10 Gold).
+
+---
 
 ### Phase 4: Network & Cross-Server Sync 📋 (Planned)
 - [ ] Optional Redis / MySQL backend for BungeeCord / Velocity networks.

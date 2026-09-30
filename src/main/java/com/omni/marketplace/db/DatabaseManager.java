@@ -2,12 +2,16 @@ package com.omni.marketplace.db;
 
 import com.omni.marketplace.catalog.CategoryDef;
 import com.omni.marketplace.catalog.CategoryDef.ItemClassification;
+import com.omni.marketplace.config.MarketConfig;
 import com.omni.marketplace.db.model.MarketModels.*;
+import com.omni.marketplace.network.MarketPackets.ItemAnalytics;
 import com.omni.marketplace.util.CurrencyUtils;
+import com.omni.marketplace.util.DiscordWebhookHelper;
 import com.omni.marketplace.util.InventoryUtils;
 import com.omni.marketplace.util.ItemSerializer;
 import net.minecraft.core.HolderLookup;
 import net.minecraft.core.registries.BuiltInRegistries;
+import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.Container;
@@ -175,11 +179,23 @@ public class DatabaseManager {
                     );
                 """);
 
+                // Player Watchlist / Favorites
+                stmt.execute("""
+                    CREATE TABLE IF NOT EXISTS player_favorites (
+                        player_uuid TEXT NOT NULL,
+                        item_id TEXT NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        PRIMARY KEY (player_uuid, item_id)
+                    );
+                """);
+
                 // Create Indexes
                 stmt.execute("CREATE INDEX IF NOT EXISTS idx_listings_item ON listings(item_id, price_copper ASC);");
                 stmt.execute("CREATE INDEX IF NOT EXISTS idx_buy_orders_item ON buy_orders(item_id, price_copper DESC);");
                 stmt.execute("CREATE INDEX IF NOT EXISTS idx_vault_player ON vault_items(player_uuid);");
                 stmt.execute("CREATE INDEX IF NOT EXISTS idx_bank_player ON bank_vault_items(player_uuid);");
+                stmt.execute("CREATE INDEX IF NOT EXISTS idx_player_fav ON player_favorites(player_uuid);");
+                stmt.execute("CREATE INDEX IF NOT EXISTS idx_trade_hist_item_time ON trade_history(item_id, timestamp);");
             }
             LOGGER.info("Omni Marketplace SQLite database tables initialized successfully.");
             seedBaselineLiquidity();
@@ -1275,8 +1291,182 @@ public class DatabaseManager {
                 pstmt.setString(7, type);
                 pstmt.executeUpdate();
             }
+
+            long totalValue = priceCopper * (long) quantity;
+            if (totalValue >= MarketConfig.get().getMinBroadcastValueCopper()) {
+                dispatchHighValueTradeAlert(itemId, priceCopper, quantity, totalValue, buyerUuid, sellerUuid);
+            }
         } catch (SQLException e) {
             LOGGER.error("Error recording trade history", e);
+        }
+    }
+
+    private void dispatchHighValueTradeAlert(String itemId, long unitPrice, int quantity, long totalValue, UUID buyerUuid, UUID sellerUuid) {
+        try {
+            String buyerName = getPlayerName(buyerUuid);
+            String sellerName = getPlayerName(sellerUuid);
+
+            String itemName = itemId;
+            Item item = BuiltInRegistries.ITEM.get(ResourceLocation.tryParse(itemId));
+            if (item != null && item != net.minecraft.world.item.Items.AIR) {
+                itemName = item.getDescription().getString();
+            }
+
+            // 1. Asynchronous Discord Webhook Embed
+            DiscordWebhookHelper.sendTradeAlert(itemId, itemName, quantity, unitPrice, totalValue, buyerName, sellerName);
+
+            // 2. In-Game Public Broadcast
+            if (MarketConfig.get().isEnableInGameBroadcasts()) {
+                net.minecraft.server.MinecraftServer server = com.omni.marketplace.OmniMarketplace.getServer();
+                if (server != null) {
+                    Component broadcast = Component.literal(String.format(
+                        "§6[Trading Post] ⚖ §fLegendary Trade: §e%s §7purchased §a%dx %s §7from §e%s §7for %s§7!",
+                        buyerName, quantity, itemName, sellerName, CurrencyUtils.format(totalValue)
+                    ));
+                    server.getPlayerList().broadcastSystemMessage(broadcast, false);
+                }
+            }
+        } catch (Exception e) {
+            LOGGER.debug("Error dispatching high-value trade alert", e);
+        }
+    }
+
+    public String getPlayerName(UUID uuid) {
+        if (uuid == null) return "System";
+        if (uuid.equals(UUID.fromString("00000000-0000-0000-0000-000000000000"))) return "Imperial Guild Exchange";
+        String sql = "SELECT player_name FROM accounts WHERE uuid = ?";
+        try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+            pstmt.setString(1, uuid.toString());
+            try (ResultSet rs = pstmt.executeQuery()) {
+                if (rs.next()) {
+                    return rs.getString("player_name");
+                }
+            }
+        } catch (SQLException e) {
+            LOGGER.debug("Could not resolve player name for {}", uuid);
+        }
+        return "Citizen";
+    }
+
+    public ItemAnalytics getItemAnalytics(String itemId) {
+        lock.lock();
+        try {
+            int vol24 = 0;
+            long min24 = 0L;
+            long max24 = 0L;
+            long avg24 = 0L;
+
+            String sql24 = """
+                SELECT 
+                    COALESCE(SUM(quantity), 0) AS vol,
+                    COALESCE(MIN(price_copper), 0) AS min_price,
+                    COALESCE(MAX(price_copper), 0) AS max_price,
+                    COALESCE(AVG(price_copper), 0) AS avg_price
+                FROM trade_history
+                WHERE item_id = ? AND timestamp >= datetime('now', '-24 hours')
+            """;
+            try (PreparedStatement pstmt = connection.prepareStatement(sql24)) {
+                pstmt.setString(1, itemId);
+                try (ResultSet rs = pstmt.executeQuery()) {
+                    if (rs.next()) {
+                        vol24 = rs.getInt("vol");
+                        min24 = rs.getLong("min_price");
+                        max24 = rs.getLong("max_price");
+                        avg24 = Math.round(rs.getDouble("avg_price"));
+                    }
+                }
+            }
+
+            long lastTraded = 0L;
+            String sqlLast = "SELECT price_copper FROM trade_history WHERE item_id = ? ORDER BY id DESC LIMIT 1";
+            try (PreparedStatement pstmt = connection.prepareStatement(sqlLast)) {
+                pstmt.setString(1, itemId);
+                try (ResultSet rs = pstmt.executeQuery()) {
+                    if (rs.next()) {
+                        lastTraded = rs.getLong("price_copper");
+                    }
+                }
+            }
+
+            int totalVol = 0;
+            String sqlTotal = "SELECT COALESCE(SUM(quantity), 0) AS tot FROM trade_history WHERE item_id = ?";
+            try (PreparedStatement pstmt = connection.prepareStatement(sqlTotal)) {
+                pstmt.setString(1, itemId);
+                try (ResultSet rs = pstmt.executeQuery()) {
+                    if (rs.next()) {
+                        totalVol = rs.getInt("tot");
+                    }
+                }
+            }
+
+            return new ItemAnalytics(itemId, vol24, min24, max24, avg24, lastTraded, totalVol);
+        } catch (SQLException e) {
+            LOGGER.error("Error fetching analytics for {}", itemId, e);
+            return new ItemAnalytics(itemId, 0, 0L, 0L, 0L, 0L, 0);
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public Set<String> getPlayerFavorites(UUID playerUuid) {
+        if (playerUuid == null) return Collections.emptySet();
+        lock.lock();
+        try {
+            Set<String> set = new HashSet<>();
+            String sql = "SELECT item_id FROM player_favorites WHERE player_uuid = ?";
+            try (PreparedStatement pstmt = connection.prepareStatement(sql)) {
+                pstmt.setString(1, playerUuid.toString());
+                try (ResultSet rs = pstmt.executeQuery()) {
+                    while (rs.next()) {
+                        set.add(rs.getString("item_id"));
+                    }
+                }
+            }
+            return set;
+        } catch (SQLException e) {
+            LOGGER.error("Error fetching favorites for {}", playerUuid, e);
+            return Collections.emptySet();
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    public boolean togglePlayerFavorite(UUID playerUuid, String itemId) {
+        if (playerUuid == null || itemId == null) return false;
+        lock.lock();
+        try {
+            String checkSql = "SELECT 1 FROM player_favorites WHERE player_uuid = ? AND item_id = ?";
+            boolean exists = false;
+            try (PreparedStatement pstmt = connection.prepareStatement(checkSql)) {
+                pstmt.setString(1, playerUuid.toString());
+                pstmt.setString(2, itemId);
+                try (ResultSet rs = pstmt.executeQuery()) {
+                    exists = rs.next();
+                }
+            }
+
+            if (exists) {
+                String delSql = "DELETE FROM player_favorites WHERE player_uuid = ? AND item_id = ?";
+                try (PreparedStatement pstmt = connection.prepareStatement(delSql)) {
+                    pstmt.setString(1, playerUuid.toString());
+                    pstmt.setString(2, itemId);
+                    pstmt.executeUpdate();
+                }
+                return false;
+            } else {
+                String insSql = "INSERT INTO player_favorites (player_uuid, item_id) VALUES (?, ?)";
+                try (PreparedStatement pstmt = connection.prepareStatement(insSql)) {
+                    pstmt.setString(1, playerUuid.toString());
+                    pstmt.setString(2, itemId);
+                    pstmt.executeUpdate();
+                }
+                return true;
+            }
+        } catch (SQLException e) {
+            LOGGER.error("Error toggling favorite for {} on {}", playerUuid, itemId, e);
+            return false;
+        } finally {
+            lock.unlock();
         }
     }
 

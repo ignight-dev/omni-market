@@ -39,12 +39,13 @@ public class CategoryRail {
     public static ItemStack getCategoryIcon(MainCategory cat) {
         return switch (cat) {
             case ALL -> new ItemStack(Items.CHEST);
+            case FAVORITES -> new ItemStack(Items.NETHER_STAR);
             case WEAPONS_ARMOR -> new ItemStack(Items.DIAMOND_SWORD);
             case TOOLS -> new ItemStack(Items.DIAMOND_PICKAXE);
             case MATERIALS -> new ItemStack(Items.IRON_INGOT);
             case CONSUMABLES -> new ItemStack(Items.GOLDEN_APPLE);
             case BLOCKS -> new ItemStack(Items.BRICKS);
-            case SPECIAL -> new ItemStack(Items.NETHER_STAR);
+            case SPECIAL -> new ItemStack(Items.TOTEM_OF_UNDYING);
         };
     }
 

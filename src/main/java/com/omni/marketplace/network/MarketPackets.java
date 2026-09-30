@@ -78,6 +78,39 @@ public class MarketPackets {
         );
     }
 
+    public record ItemAnalytics(
+            String itemId,
+            int volume24h,
+            long minPrice24h,
+            long maxPrice24h,
+            long avgPrice24h,
+            long lastTradedPrice,
+            int totalVolume
+    ) {
+        public static final ItemAnalytics EMPTY = new ItemAnalytics("", 0, 0L, 0L, 0L, 0L, 0);
+
+        public static final StreamCodec<ByteBuf, ItemAnalytics> STREAM_CODEC = StreamCodec.of(
+                (buf, val) -> {
+                    ByteBufCodecs.STRING_UTF8.encode(buf, val.itemId());
+                    ByteBufCodecs.VAR_INT.encode(buf, val.volume24h());
+                    ByteBufCodecs.VAR_LONG.encode(buf, val.minPrice24h());
+                    ByteBufCodecs.VAR_LONG.encode(buf, val.maxPrice24h());
+                    ByteBufCodecs.VAR_LONG.encode(buf, val.avgPrice24h());
+                    ByteBufCodecs.VAR_LONG.encode(buf, val.lastTradedPrice());
+                    ByteBufCodecs.VAR_INT.encode(buf, val.totalVolume());
+                },
+                buf -> new ItemAnalytics(
+                        ByteBufCodecs.STRING_UTF8.decode(buf),
+                        ByteBufCodecs.VAR_INT.decode(buf),
+                        ByteBufCodecs.VAR_LONG.decode(buf),
+                        ByteBufCodecs.VAR_LONG.decode(buf),
+                        ByteBufCodecs.VAR_LONG.decode(buf),
+                        ByteBufCodecs.VAR_LONG.decode(buf),
+                        ByteBufCodecs.VAR_INT.decode(buf)
+                )
+        );
+    }
+
     /* ========================================================================= */
     /* C2S Payloads                                                              */
     /* ========================================================================= */
@@ -189,6 +222,16 @@ public class MarketPackets {
         public Type<? extends CustomPacketPayload> type() { return TYPE; }
     }
 
+    public record ToggleFavoriteC2S(String itemId) implements CustomPacketPayload {
+        public static final Type<ToggleFavoriteC2S> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(OmniMarketplace.MOD_ID, "toggle_favorite"));
+        public static final StreamCodec<ByteBuf, ToggleFavoriteC2S> STREAM_CODEC = StreamCodec.composite(
+                ByteBufCodecs.STRING_UTF8, ToggleFavoriteC2S::itemId,
+                ToggleFavoriteC2S::new
+        );
+        @Override
+        public Type<? extends CustomPacketPayload> type() { return TYPE; }
+    }
+
     /* ========================================================================= */
     /* S2C Payloads                                                              */
     /* ========================================================================= */
@@ -227,13 +270,24 @@ public class MarketPackets {
         public Type<? extends CustomPacketPayload> type() { return TYPE; }
     }
 
-    public record SyncOrderBookS2C(String itemId, List<OrderEntry> asks, List<OrderEntry> bids) implements CustomPacketPayload {
+    public record SyncOrderBookS2C(String itemId, List<OrderEntry> asks, List<OrderEntry> bids, ItemAnalytics analytics) implements CustomPacketPayload {
         public static final Type<SyncOrderBookS2C> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(OmniMarketplace.MOD_ID, "sync_order_book"));
         public static final StreamCodec<ByteBuf, SyncOrderBookS2C> STREAM_CODEC = StreamCodec.composite(
                 ByteBufCodecs.STRING_UTF8, SyncOrderBookS2C::itemId,
                 OrderEntry.STREAM_CODEC.apply(ByteBufCodecs.list()), SyncOrderBookS2C::asks,
                 OrderEntry.STREAM_CODEC.apply(ByteBufCodecs.list()), SyncOrderBookS2C::bids,
+                ItemAnalytics.STREAM_CODEC, SyncOrderBookS2C::analytics,
                 SyncOrderBookS2C::new
+        );
+        @Override
+        public Type<? extends CustomPacketPayload> type() { return TYPE; }
+    }
+
+    public record SyncFavoritesS2C(List<String> favoriteItemIds) implements CustomPacketPayload {
+        public static final Type<SyncFavoritesS2C> TYPE = new Type<>(ResourceLocation.fromNamespaceAndPath(OmniMarketplace.MOD_ID, "sync_favorites"));
+        public static final StreamCodec<ByteBuf, SyncFavoritesS2C> STREAM_CODEC = StreamCodec.composite(
+                ByteBufCodecs.STRING_UTF8.apply(ByteBufCodecs.list()), SyncFavoritesS2C::favoriteItemIds,
+                SyncFavoritesS2C::new
         );
         @Override
         public Type<? extends CustomPacketPayload> type() { return TYPE; }

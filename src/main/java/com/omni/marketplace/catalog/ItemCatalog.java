@@ -16,6 +16,10 @@ import java.util.*;
 public class ItemCatalog {
 
     public static List<CatalogEntry> searchItems(String query, String categoryStr, String subCategoryStr, int page, int pageSize) {
+        return searchItems(null, query, categoryStr, subCategoryStr, page, pageSize);
+    }
+
+    public static List<CatalogEntry> searchItems(UUID playerUuid, String query, String categoryStr, String subCategoryStr, int page, int pageSize) {
         String cleanQuery = (query == null) ? "" : query.trim().toLowerCase();
 
         MainCategory selectedMain = MainCategory.ALL;
@@ -35,6 +39,8 @@ public class ItemCatalog {
         DatabaseManager db = DatabaseManager.getInstance();
         Map<String, DatabaseManager.ItemMarketStats> statsMap = db.getAllItemMarketStats();
         Set<String> discoveredItems = db.getDiscoveredItems();
+        Set<String> favorites = (selectedMain == MainCategory.FAVORITES && playerUuid != null)
+                ? db.getPlayerFavorites(playerUuid) : Collections.emptySet();
 
         List<ItemCandidate> matched = new ArrayList<>();
 
@@ -49,8 +55,8 @@ public class ItemCatalog {
 
             ItemClassification classification = CategoryDef.classify(item);
 
-            // If item is endgame restricted (Netherite, Boss Relics), only show if discovered/listed by a player
-            if (classification.isEndgameRestricted()) {
+            // If item is endgame restricted (Netherite, Boss Relics), only show if discovered/listed by a player (unless favorited)
+            if (classification.isEndgameRestricted() && selectedMain != MainCategory.FAVORITES) {
                 boolean hasEverBeenListed = discoveredItems.contains(itemId) || statsMap.containsKey(itemId);
                 if (!hasEverBeenListed) {
                     continue;
@@ -58,7 +64,11 @@ public class ItemCatalog {
             }
 
             // Category filter
-            if (selectedMain != MainCategory.ALL && classification.mainCategory() != selectedMain) {
+            if (selectedMain == MainCategory.FAVORITES) {
+                if (!favorites.contains(itemId)) {
+                    continue;
+                }
+            } else if (selectedMain != MainCategory.ALL && classification.mainCategory() != selectedMain) {
                 continue;
             }
 
