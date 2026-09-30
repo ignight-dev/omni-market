@@ -1,0 +1,26 @@
+modLoader="javafml"
+loaderVersion="[4,)"
+license="MIT"
+
+[[mods]]
+modId="omni_marketplace"
+version="1.0.0"
+displayName="Omni Marketplace"
+authors="OmniTeam"
+description='''A comprehensive Guild Wars 2 inspired Global Trading Post for Minecraft NeoForge 1.21.1.
+Features live search, nested category tree, instant order book matching, persistent SQLite database,
+delivery collection vault, 3-tier copper/silver/gold currency, and emerald exchange.'''
+
+[[dependencies.omni_marketplace]]
+    modId="neoforge"
+    type="required"
+    versionRange="[21.1,)"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.omni_marketplace]]
+    modId="minecraft"
+    type="required"
+    versionRange="[1.21.1,1.22)"
+    ordering="NONE"
+    side="BOTH"
